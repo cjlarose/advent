@@ -8,10 +8,10 @@
         bi (java.math.BigInteger. 1 digest)]
     (format (str "%0" (* 2 (count digest)) "X") bi)))
 
-(defn find-hash [k]
+(defn find-hash [leading-zeros k]
   (loop [i 1]
     (let [input (str k i)
           h     (md5 input)]
-      (if (every? #(= % \0) (take 5 h))
+      (if (every? #(= % \0) (take leading-zeros h))
         i
         (recur (inc i))))))
