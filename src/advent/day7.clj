@@ -16,21 +16,16 @@
      integer = #'[0-9]+'
      wire = #'[a-z]+'"))
 
-(defn bin-op-chan [result-wire op a-chan b-chan result-chan]
+(defn bin-op-chan [op a-chan b-chan result-chan]
   (go (let [merge-chan (async/merge [a-chan b-chan])
             a (<! merge-chan)
             b (<! merge-chan)]
-        (println (str "publishing to " result-wire))
         (>! result-chan (op a b)))))
 
-(defn unary-chan [result-wire f input-chan result-chan]
-  ; (go (->> (<! input-chan)
-  ;          (f)
-  ;          (>! result-chan))))
-  (go (let [input (<! input-chan)
-            value (f input)]
-        (println (str "publishing to " result-wire))
-        (>! result-chan value))))
+(defn unary-chan [f input-chan result-chan]
+  (go (->> (<! input-chan)
+           (f)
+           (>! result-chan))))
 
 (defn handle-instruction [result-chans mults instruction]
   (let [[_ lhs [_ result-wire]] instruction
@@ -40,11 +35,11 @@
       :wire     (let [[_ input-wire] lhs
                       input-chan (chan)]
                   (tap (mults input-wire) input-chan)
-                  (unary-chan result-wire identity input-chan result-chan))
+                  (unary-chan identity input-chan result-chan))
       :unary-op (let [[_ _ [_ input-wire]] lhs
                       input-chan (chan)]
                   (tap (mults input-wire) input-chan)
-                  (unary-chan result-wire bit-not input-chan result-chan))
+                  (unary-chan bit-not input-chan result-chan))
       :shift-op (let [[_ [_ input-wire] op-type [_ shift-amount]] lhs
                       input-chan (chan)
                       shift-fn (if (= op-type "LSHIFT")
@@ -53,7 +48,7 @@
                       shift-amount-int (. Integer parseInt shift-amount)
                       op #(shift-fn % shift-amount-int)]
                   (tap (mults input-wire) input-chan)
-                  (unary-chan result-wire op input-chan result-chan))
+                  (unary-chan op input-chan result-chan))
       :binary-op (let [[_ op1 op-type op2] lhs
                        to-chan (fn [[tag v]] (let [c (chan)]
                                                (if (= tag :wire)
@@ -63,7 +58,7 @@
                        a-chan (to-chan op1)
                        b-chan (to-chan op2)
                        op (if (= op-type "AND") bit-and bit-or)]
-                     (bin-op-chan result-wire op a-chan b-chan result-chan)))))
+                     (bin-op-chan op a-chan b-chan result-chan)))))
 
 (defn value-of-wire-a [input]
   (let [instructions (rest (input-parser input))
@@ -74,10 +69,7 @@
     (doseq [instruction (remove seed-instruction? instructions)]
       (handle-instruction result-chans mults instruction))
     (doseq [[_ [_ v] [_ wire]] (filter seed-instruction? instructions)]
-      (println "writing " v " to " wire)
       (go (>! (result-chans wire) (. Integer parseInt v))))
-    (println "waiting")
     (let [c (chan)]
       (tap (mults "a") c)
       (<!! c))))
-    ; (<!! (result-chans "a"))))
